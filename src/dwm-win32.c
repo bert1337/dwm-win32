@@ -40,6 +40,8 @@
 #include <shellapi.h>
 #include <stdbool.h>
 #include <time.h>
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
 
 #include "mods/dwm.h"
 #include "mods/eventemitter.h"
@@ -80,6 +82,11 @@
 
 #define EVENT_OBJECT_CLOAKED 0x8017
 #define EVENT_OBJECT_UNCLOAKED 0x8018
+
+//DEFINE ID
+const static GUID XIID_IMMDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
+const static GUID XIID_MMDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
+const static GUID XIID_IAudioEndpointVolume = {0x5CDF2C82, 0x841E, 0x4546, {0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A}};
 
 HHOOK g_KeybdHook = NULL;
 enum
@@ -235,9 +242,11 @@ static void updategeom(void);
 static void view(const Arg *arg);
 static void zoom(const Arg *arg);
 static bool iscloaked(HWND hwnd);
+unsigned int vol = 0;
 
 typedef BOOL (*RegisterShellHookWindowProc)(HWND);
 
+typedef struct IMMDeviceEnumerator IMMDeviceEnumerator;
 static HWND dwmhwnd, barhwnd;
 static HWINEVENTHOOK wineventhook;
 static HFONT font;
@@ -246,6 +255,11 @@ static int sx, sy, sw, sh; /* X display screen geometry x, y, width, height */
 static int by, bh, blw;    /* bar geometry y, height and layout symbol width */
 static int wx, wy, ww, wh; /* window area geometry x, y, width, height, bar excluded */
 static unsigned int seltags, sellt;
+
+wchar_t *volumeEmoji[6] = {{L"🔇"},
+                           {L"🔈"},
+                           {L"🔉"},
+                           {L"🔊"}};
 
 static Client *clients = NULL;
 static Client *sel = NULL;
@@ -431,6 +445,7 @@ void drawbar(void)
     wchar_t localtimestr[256];
     wchar_t utctimestr[256];
     wchar_t batterystr[256];
+    wchar_t audiovstr[256];
     wchar_t out[256];
 
     for (c = clients; c; c = c->next)
@@ -479,11 +494,11 @@ void drawbar(void)
             gmtime_s(&date, &timer);
             wcsftime(utctimestr, 255, clockfmt, &date);
 
-            swprintf(timestr, sizeof(timestr), L"%s | UTC: %s", localtimestr, utctimestr);
+            swprintf(timestr, sizeof(timestr), L" %s | UTC: %s ", localtimestr, utctimestr);
         }
         else
         {
-            swprintf(timestr, sizeof(timestr), L"%s", localtimestr);
+            swprintf(timestr, sizeof(timestr), L" %s ", localtimestr);
         }
     }
 
@@ -499,18 +514,60 @@ void drawbar(void)
             {
                 if (status.ACLineStatus == 1)
                 {
-                    swprintf(batterystr, sizeof(batterystr), L" | ⚡🔋 : %u%%", battery);
+                    swprintf(batterystr, sizeof(batterystr), L" ⚡🔋: %u%% ", battery);
                 }
                 else
                 {
-                    swprintf(batterystr, sizeof(batterystr), L" | 🔋 : %u%%", battery);
+                    swprintf(batterystr, sizeof(batterystr), L" 🔋: %u%% ", battery);
                 }
             }
         }
     }
+
+    if (showVolume)
+    {
+
+        IMMDeviceEnumerator *deviceEnumerator = NULL;
+        IMMDevice *defaultDevice = NULL;
+        IAudioEndpointVolume *endpointVolume = NULL;
+        HRESULT hr;
+        float fMasterVolume;
+        BOOL bSuccess = FALSE;
+
+        hr = CoCreateInstance(&XIID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER, &XIID_IMMDeviceEnumerator, (LPVOID *)&deviceEnumerator);
+        if (SUCCEEDED(hr))
+        {
+            hr = deviceEnumerator->lpVtbl->GetDefaultAudioEndpoint(deviceEnumerator, eRender, eConsole, &defaultDevice);
+            if (SUCCEEDED(hr))
+            {
+                hr = defaultDevice->lpVtbl->Activate(defaultDevice, &XIID_IAudioEndpointVolume, CLSCTX_INPROC_SERVER, NULL, (LPVOID *)&endpointVolume);
+                if (SUCCEEDED(hr))
+                {
+                    endpointVolume->lpVtbl->GetMasterVolumeLevelScalar(endpointVolume, &fMasterVolume);
+                    vol = fMasterVolume * 100;
+
+                    endpointVolume->lpVtbl->Release(endpointVolume);
+                }
+
+                defaultDevice->lpVtbl->Release(defaultDevice);
+            }
+
+            deviceEnumerator->lpVtbl->Release(deviceEnumerator);
+        }
+
+        //        🔇
+        //        🔈
+        //        🔉
+        //        🔊
+
+        unsigned int i = vol / 33;
+        swprintf(audiovstr, sizeof(audiovstr), L" %s: %u%% ", volumeEmoji[i], vol);
+    }
+
     //concatenate all the parts to create the final output string
-    wcscpy(out, timestr);
-    wcscat(out, batterystr);
+    wcscpy(out, batterystr);
+    wcscat(out, audiovstr);
+    wcscat(out, timestr);
     dc.w = TEXTW(out);
     dc.x = ww - dc.w;
 
@@ -1336,6 +1393,7 @@ static int lua_panic_handler(lua_State *L)
             msg = lua_tostring(L, -1);
         die(utf8_to_utf16(msg));
     }
+
     return 0;
 }
 
