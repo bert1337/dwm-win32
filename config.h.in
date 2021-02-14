@@ -27,7 +27,9 @@ static bool showclock = true;              /* false means no clock */
 static bool showutcclock = false;          /* false means no utc clock */
 static bool showexploreronstart = false;   /* false means do not show explorer/task bar on start */
 static bool showBattery = true;            /* false means the battery level is not shown*/
-static bool showVolume = true;            /* false means the volume level is not shown*/
+static bool showVolume = true;             /* false means the volume level is not shown*/
+static bool useCurrentSong = true;          /*false means that we wont use the current song plugin */
+
 
 /* tagging */
 static const wchar_t tags[][MAXTAGLEN] = {L"1", L"2", L"3", L"4", L"5", L"6", L"7", L"8", L"9"};
@@ -129,14 +131,14 @@ static Key keys[] = {
     {MODKEY, '0', view, {.ui = ~0}},
     {MODKEY | MOD_SHIFT, '0', tag, {.ui = ~0}},
     TAGKEYS('1', 0)
-    TAGKEYS('2', 1)
-    TAGKEYS('3', 2)
-    TAGKEYS('4', 3)
-    TAGKEYS('5', 4)
-    TAGKEYS('6', 5)
-    TAGKEYS('7', 6)
-    TAGKEYS('8', 7)
-    TAGKEYS('9', 8){MODKEY | MOD_CONTROL, 'Q', quit, {0}},
+        TAGKEYS('2', 1)
+            TAGKEYS('3', 2)
+                TAGKEYS('4', 3)
+                    TAGKEYS('5', 4)
+                        TAGKEYS('6', 5)
+                            TAGKEYS('7', 6)
+                                TAGKEYS('8', 7)
+                                    TAGKEYS('9', 8){MODKEY | MOD_CONTROL, 'Q', quit, {0}},
 };
 
 /* button definitions */

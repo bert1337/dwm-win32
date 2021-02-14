@@ -43,11 +43,18 @@
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include "mods/dwm.h"
 #include "mods/eventemitter.h"
 #include "mods/display.h"
 #include "mods/client.h"
 #include "mods/hotkey.h"
+
+#include <process.h>
+#include "win32_utf8.h"
+#include <stdlib.h>
 
 #define NAME L"dwm-win32" /* Used for window name/class */
 
@@ -61,6 +68,13 @@
 #define HEIGHT(x) ((x)->h + 2 * (x)->bw)
 #define TAGMASK ((int)((1LL << LENGTH(tags)) - 1))
 #define TEXTW(x) (textnw(x, wcslen(x)))
+
+// Need to link with Ws2_32.lib
+#pragma comment(lib, "Ws2_32.lib")
+// #pragma comment (lib, "Mswsock.lib")
+
+#define DEFAULT_BUFLEN 1024
+#define DEFAULT_PORT "27015"
 
 #ifdef DEBUG
 #define debug(...) eprint(false, __VA_ARGS__)
@@ -242,6 +256,10 @@ static void updategeom(void);
 static void view(const Arg *arg);
 static void zoom(const Arg *arg);
 static bool iscloaked(HWND hwnd);
+void updateVolume();
+void readStringFromFile(char *filename, wchar_t *out);
+int tcpServer();
+
 unsigned int vol = 0;
 
 typedef BOOL (*RegisterShellHookWindowProc)(HWND);
@@ -266,6 +284,8 @@ static Client *sel = NULL;
 static Client *stack = NULL;
 static Layout *lt[] = {NULL, NULL};
 static UINT shellhookid; /* Window Message id */
+
+wchar_t playingstr[256];
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -398,6 +418,8 @@ void cleanup(lua_State *L)
 
     if (font)
         DeleteObject(font);
+    if (useCurrentSong)
+        system("powershell.exe Stop-Service -Name \"CurrentSongService\"");
 
     if (L)
     {
@@ -446,6 +468,7 @@ void drawbar(void)
     wchar_t utctimestr[256];
     wchar_t batterystr[256];
     wchar_t audiovstr[256];
+
     wchar_t out[256];
 
     for (c = clients; c; c = c->next)
@@ -494,11 +517,11 @@ void drawbar(void)
             gmtime_s(&date, &timer);
             wcsftime(utctimestr, 255, clockfmt, &date);
 
-            swprintf(timestr, sizeof(timestr), L" %s | UTC: %s ", localtimestr, utctimestr);
+            swprintf(timestr, sizeof(timestr), L" 📅 %s | UTC: %s ", localtimestr, utctimestr);
         }
         else
         {
-            swprintf(timestr, sizeof(timestr), L" %s ", localtimestr);
+            swprintf(timestr, sizeof(timestr), L" 📅 %s ", localtimestr);
         }
     }
 
@@ -514,11 +537,11 @@ void drawbar(void)
             {
                 if (status.ACLineStatus == 1)
                 {
-                    swprintf(batterystr, sizeof(batterystr), L" ⚡🔋: %u%% ", battery);
+                    swprintf(batterystr, sizeof(batterystr), L" ⚡🔋 %u%% ", battery);
                 }
                 else
                 {
-                    swprintf(batterystr, sizeof(batterystr), L" 🔋: %u%% ", battery);
+                    swprintf(batterystr, sizeof(batterystr), L" 🔋 %u%% ", battery);
                 }
             }
         }
@@ -526,46 +549,20 @@ void drawbar(void)
 
     if (showVolume)
     {
-
-        IMMDeviceEnumerator *deviceEnumerator = NULL;
-        IMMDevice *defaultDevice = NULL;
-        IAudioEndpointVolume *endpointVolume = NULL;
-        HRESULT hr;
-        float fMasterVolume;
-        BOOL bSuccess = FALSE;
-
-        hr = CoCreateInstance(&XIID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER, &XIID_IMMDeviceEnumerator, (LPVOID *)&deviceEnumerator);
-        if (SUCCEEDED(hr))
-        {
-            hr = deviceEnumerator->lpVtbl->GetDefaultAudioEndpoint(deviceEnumerator, eRender, eConsole, &defaultDevice);
-            if (SUCCEEDED(hr))
-            {
-                hr = defaultDevice->lpVtbl->Activate(defaultDevice, &XIID_IAudioEndpointVolume, CLSCTX_INPROC_SERVER, NULL, (LPVOID *)&endpointVolume);
-                if (SUCCEEDED(hr))
-                {
-                    endpointVolume->lpVtbl->GetMasterVolumeLevelScalar(endpointVolume, &fMasterVolume);
-                    vol = fMasterVolume * 100;
-
-                    endpointVolume->lpVtbl->Release(endpointVolume);
-                }
-
-                defaultDevice->lpVtbl->Release(defaultDevice);
-            }
-
-            deviceEnumerator->lpVtbl->Release(deviceEnumerator);
-        }
-
-        //        🔇
-        //        🔈
-        //        🔉
-        //        🔊
-
+        updateVolume();
         unsigned int i = vol / 33;
-        swprintf(audiovstr, sizeof(audiovstr), L" %s: %u%% ", volumeEmoji[i], vol);
+        swprintf(audiovstr, sizeof(audiovstr), L" %s %u%% ", volumeEmoji[i], vol);
     }
 
+    // if (true)
+    // {
+
+    //     //readStringFromFile("C:/dwm/plugins/currentSong.info", playingstr);
+    // }
+
     //concatenate all the parts to create the final output string
-    wcscpy(out, batterystr);
+    wcscpy(out, playingstr);
+    wcscat(out, batterystr);
     wcscat(out, audiovstr);
     wcscat(out, timestr);
     dc.w = TEXTW(out);
@@ -586,6 +583,53 @@ void drawbar(void)
     }
 
     ReleaseDC(barhwnd, dc.hdc);
+}
+
+void readStringFromFile(char *filename, wchar_t *out)
+{
+    FILE *fp;
+    char str[40];
+
+    fp = fopen(filename, "r");
+    if (fp != NULL)
+        if (fgets(str, sizeof(str), fp) != NULL)
+            swprintf(out, 256, L"%s", utf8_to_utf16(str));
+        //        *out = utf8_to_utf16(str);
+        else
+        {
+            swprintf(out, 256, L" ");
+        }
+}
+
+void updateVolume()
+{
+    IMMDeviceEnumerator *deviceEnumerator = NULL;
+    IMMDevice *defaultDevice = NULL;
+    IAudioEndpointVolume *endpointVolume = NULL;
+    HRESULT hr;
+    float fMasterVolume;
+    BOOL bSuccess = FALSE;
+
+    hr = CoCreateInstance(&XIID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER, &XIID_IMMDeviceEnumerator, (LPVOID *)&deviceEnumerator);
+    if (SUCCEEDED(hr))
+    {
+        hr = deviceEnumerator->lpVtbl->GetDefaultAudioEndpoint(deviceEnumerator, eRender, eConsole, &defaultDevice);
+        if (SUCCEEDED(hr))
+        {
+            hr = defaultDevice->lpVtbl->Activate(defaultDevice, &XIID_IAudioEndpointVolume, CLSCTX_INPROC_SERVER, NULL, (LPVOID *)&endpointVolume);
+            if (SUCCEEDED(hr))
+            {
+                endpointVolume->lpVtbl->GetMasterVolumeLevelScalar(endpointVolume, &fMasterVolume);
+                vol = fMasterVolume * 100;
+
+                endpointVolume->lpVtbl->Release(endpointVolume);
+            }
+
+            defaultDevice->lpVtbl->Release(defaultDevice);
+        }
+
+        deviceEnumerator->lpVtbl->Release(deviceEnumerator);
+    }
 }
 
 void drawsquare(bool filled, bool empty, bool invert, unsigned long col[ColLast])
@@ -1405,6 +1449,12 @@ void setup(lua_State *L, HINSTANCE hInstance)
     luaopen_dwmlibs(L, state);
     load_user_script(L);
 
+    if (useCurrentSong)
+    {
+        system("powershell.exe New-Service -Name \"CurrentSongService\" -BinaryPathName \'\"C:\\dwm\\plugins\\CurrentSong\\CurrentSongService.exe \"\'");
+        system("powershell.exe Start-Service -Name \"CurrentSongService\"");
+    }
+
     unsigned int i;
 
     lt[0] = &layouts[0];
@@ -1418,6 +1468,9 @@ void setup(lua_State *L, HINSTANCE hInstance)
     dc.sel[ColBorder] = selbordercolor;
     dc.sel[ColBG] = selbgcolor;
     dc.sel[ColFG] = selfgcolor;
+
+    if (showVolume)
+        updateVolume();
 
     /* save colors so we can restore them in cleanup */
     for (i = 0; i < LENGTH(colorwinelements); i++)
@@ -1942,6 +1995,155 @@ void ReleaseHook()
     UnhookWindowsHookEx(_hook);
 }
 
+int tcpServer()
+{
+    while (true)
+    {
+        WSADATA wsaData;
+        int iResult;
+
+        SOCKET ListenSocket = INVALID_SOCKET;
+        SOCKET ClientSocket = INVALID_SOCKET;
+
+        struct addrinfo *result = NULL;
+        struct addrinfo hints;
+
+        int iSendResult;
+        char recvbuf[DEFAULT_BUFLEN];
+        int recvbuflen = DEFAULT_BUFLEN;
+
+        // Initialize Winsock
+        iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+        if (iResult != 0)
+        {
+            MessageBox(NULL, "WSAStartup failed with error", "Error", MB_ICONERROR);
+            printf("WSAStartup failed with error: %d\n", iResult);
+            return 1;
+        }
+
+        ZeroMemory(&hints, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
+        hints.ai_flags = AI_PASSIVE;
+
+        // Resolve the server address and port
+        iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+        if (iResult != 0)
+        {
+            MessageBox(NULL, "getaddrinfo failed with error", "Error", MB_ICONERROR);
+            printf("getaddrinfo failed with error: %d\n", iResult);
+
+            WSACleanup();
+            return 1;
+        }
+
+        // Create a SOCKET for connecting to server
+        ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+        if (ListenSocket == INVALID_SOCKET)
+        {
+            MessageBox(NULL, "socket failed with error", "Error", MB_ICONERROR);
+            printf("socket failed with error: %ld\n", WSAGetLastError());
+            freeaddrinfo(result);
+            WSACleanup();
+            return 1;
+        }
+
+        // Setup the TCP listening socket
+        iResult = bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen);
+        if (iResult == SOCKET_ERROR)
+        {
+            MessageBox(NULL, "bind failed with error", "Error", MB_ICONERROR);
+            printf("bind failed with error: %d\n", WSAGetLastError());
+            freeaddrinfo(result);
+            closesocket(ListenSocket);
+            WSACleanup();
+            return 1;
+        }
+
+        freeaddrinfo(result);
+
+        iResult = listen(ListenSocket, SOMAXCONN);
+        if (iResult == SOCKET_ERROR)
+        {
+            MessageBox(NULL, "listen failed with error", "Error", MB_ICONERROR);
+
+            printf("listen failed with error: %d\n", WSAGetLastError());
+            closesocket(ListenSocket);
+            WSACleanup();
+            return 1;
+        }
+
+        // Accept a client socket
+        ClientSocket = accept(ListenSocket, NULL, NULL);
+        if (ClientSocket == INVALID_SOCKET)
+        {
+            MessageBox(NULL, "accept failed with error", "Error", MB_ICONERROR);
+
+            printf("accept failed with error: %d\n", WSAGetLastError());
+            closesocket(ListenSocket);
+            WSACleanup();
+            return 1;
+        }
+
+        // No longer need server socket
+        closesocket(ListenSocket);
+
+        // Receive until the peer shuts down the connection
+        do
+        {
+
+            iResult = recv(ClientSocket, recvbuf, recvbuflen, 0);
+            if (iResult > 0)
+            {
+                printf("Bytes received: %d\n", iResult);
+
+                // MessageBox(NULL, recvbuf, "Recived title", MB_ICONINFORMATION);
+                //swprintf(playingstr, 256, L"%s", );
+
+                wcscpy(playingstr, utf8_to_utf16(recvbuf));
+                memset(recvbuf, 0, sizeof recvbuf);
+
+                // Echo the buffer back to the sender
+                iSendResult = send(ClientSocket, recvbuf, iResult, 0);
+                if (iSendResult == SOCKET_ERROR)
+                {
+                    printf("send failed with error: %d\n", WSAGetLastError());
+                    closesocket(ClientSocket);
+                    WSACleanup();
+                    return 1;
+                }
+                printf("Bytes sent: %d\n", iSendResult);
+            }
+            else if (iResult == 0)
+                printf("Connection closing...\n");
+            else
+            {
+                printf("recv failed with error: %d\n", WSAGetLastError());
+                closesocket(ClientSocket);
+                WSACleanup();
+                return 1;
+            }
+
+        } while (iResult > 0);
+
+        // shutdown the connection since we're done
+        iResult = shutdown(ClientSocket, SD_SEND);
+        if (iResult == SOCKET_ERROR)
+        {
+            printf("shutdown failed with error: %d\n", WSAGetLastError());
+            closesocket(ClientSocket);
+            WSACleanup();
+            return 1;
+        }
+
+        // cleanup
+        closesocket(ClientSocket);
+        WSACleanup();
+    }
+    return 0;
+}
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nShowCmd)
 {
     SetProcessDPIAware();
@@ -1958,6 +2160,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
     lua_State *L = luaL_newstate();
     setup(L, hInstance);
+    _beginthread(tcpServer, 0, 1);
 
     while (GetMessage(&msg, NULL, 0, 0) > 0)
     {
