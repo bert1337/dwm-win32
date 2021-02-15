@@ -211,7 +211,7 @@ static void detach(Client *c);
 static void detachstack(Client *c);
 static void drawbar(void);
 static void drawsquare(bool filled, bool empty, bool invert, unsigned long col[ColLast]);
-static void drawtext(const wchar_t *text, unsigned long col[ColLast], bool invert);
+static void drawtext(const wchar_t *text, unsigned long col[ColLast], bool invert, bool center);
 void drawborder(Client *c, COLORREF color);
 void eprint(bool premortem, const wchar_t *errstr, ...);
 static void focus(Client *c);
@@ -256,6 +256,9 @@ static void updategeom(void);
 static void view(const Arg *arg);
 static void zoom(const Arg *arg);
 static bool iscloaked(HWND hwnd);
+static float CalculateCPULoad(unsigned long long idleTicks, unsigned long long totalTicks);
+static unsigned long long FileTimeToInt64(const FILETIME ft);
+float GetCPULoad();
 void updateVolume();
 void readStringFromFile(char *filename, wchar_t *out);
 int tcpServer();
@@ -468,6 +471,7 @@ void drawbar(void)
     wchar_t utctimestr[256];
     wchar_t batterystr[256];
     wchar_t audiovstr[256];
+    wchar_t cpustr[256];
 
     wchar_t out[256];
 
@@ -483,14 +487,14 @@ void drawbar(void)
     {
         dc.w = TEXTW(tags[i]);
         col = tagset[seltags] & 1 << i ? dc.sel : dc.norm;
-        drawtext(tags[i], col, urg & 1 << i);
+        drawtext(tags[i], col, urg & 1 << i, true);
         drawsquare(sel && sel->tags & 1 << i, occ & 1 << i, urg & 1 << i, col);
         dc.x += dc.w;
     }
     if (blw > 0)
     {
         dc.w = blw;
-        drawtext(lt[sellt]->symbol, dc.norm, false);
+        drawtext(lt[sellt]->symbol, dc.norm, false, true);
         x = dc.x + dc.w;
     }
     else
@@ -502,7 +506,7 @@ void drawbar(void)
         dc.x = x;
         dc.w = ww - x;
     }
-    drawtext(stext, dc.norm, false);
+    drawtext(stext, dc.norm, false, true);
 
     if (showclock)
     {
@@ -554,32 +558,33 @@ void drawbar(void)
         swprintf(audiovstr, sizeof(audiovstr), L" %s %u%% ", volumeEmoji[i], vol);
     }
 
-    // if (true)
-    // {
+    if (true)
+    {
 
-    //     //readStringFromFile("C:/dwm/plugins/currentSong.info", playingstr);
-    // }
+        swprintf(cpustr, sizeof(cpustr), L" 🖥 %i%% ", (int)GetCPULoad() * 100);
+    }
 
     //concatenate all the parts to create the final output string
     wcscpy(out, playingstr);
     wcscat(out, batterystr);
+    wcscat(out, cpustr);
     wcscat(out, audiovstr);
     wcscat(out, timestr);
     dc.w = TEXTW(out);
     dc.x = ww - dc.w;
 
-    drawtext(out, dc.norm, false);
+    drawtext(out, dc.norm, false, true);
 
     if ((dc.w = dc.x - x) > bh)
     {
         dc.x = x;
         if (sel)
         {
-            drawtext(getclienttitle(sel->hwnd), dc.sel, false);
+            drawtext(getclienttitle(sel->hwnd), dc.sel, false, false);
             drawsquare(sel->isfixed, sel->isfloating, false, dc.sel);
         }
         else
-            drawtext(NULL, dc.norm, false);
+            drawtext(NULL, dc.norm, false, false);
     }
 
     ReleaseDC(barhwnd, dc.hdc);
@@ -651,7 +656,7 @@ void drawsquare(bool filled, bool empty, bool invert, unsigned long col[ColLast]
     DeleteObject(brush);
 }
 
-void drawtext(const wchar_t *text, unsigned long col[ColLast], bool invert)
+void drawtext(const wchar_t *text, unsigned long col[ColLast], bool invert, bool center)
 {
     RECT r = {.left = dc.x, .top = dc.y, .right = dc.x + dc.w, .bottom = dc.y + dc.h};
 
@@ -674,8 +679,14 @@ void drawtext(const wchar_t *text, unsigned long col[ColLast], bool invert)
             font = (HFONT)GetStockObject(SYSTEM_FONT);
     }
     SelectObject(dc.hdc, font);
-
-    DrawTextW(dc.hdc, text, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    if (center)
+    {
+        DrawTextW(dc.hdc, text, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    else
+    {
+        DrawTextW(dc.hdc, text, -1, &r, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
 }
 
 void eprint(bool premortem, const wchar_t *errstr, ...)
@@ -1530,6 +1541,35 @@ void setup(lua_State *L, HINSTANCE hInstance)
     updatebar();
 
     focus(NULL);
+}
+
+static float CalculateCPULoad(unsigned long long idleTicks, unsigned long long totalTicks)
+{
+    static unsigned long long _previousTotalTicks = 0;
+    static unsigned long long _previousIdleTicks = 0;
+
+    unsigned long long totalTicksSinceLastTime = totalTicks - _previousTotalTicks;
+    unsigned long long idleTicksSinceLastTime = idleTicks - _previousIdleTicks;
+
+    float ret = 1.0f - ((totalTicksSinceLastTime > 0) ? ((float)idleTicksSinceLastTime) / totalTicksSinceLastTime : 0);
+
+    _previousTotalTicks = totalTicks;
+    _previousIdleTicks = idleTicks;
+    return ret;
+}
+
+// Returns 1.0f for "CPU fully pinned", 0.0f for "CPU idle", or somewhere in between
+// You'll need to call this at regular intervals, since it measures the load between
+// the previous call and the current one.  Returns -1.0 on error.
+float GetCPULoad()
+{
+    FILETIME idleTime, kernelTime, userTime;
+    return GetSystemTimes(&idleTime, &kernelTime, &userTime) ? CalculateCPULoad(FileTimeToInt64(idleTime), FileTimeToInt64(kernelTime) + FileTimeToInt64(userTime)) : -1.0f;
+}
+
+static unsigned long long FileTimeToInt64(const FILETIME ft)
+{
+    return (((unsigned long long)(ft.dwHighDateTime)) << 32) | ((unsigned long long)ft.dwLowDateTime);
 }
 
 void setupbar(HINSTANCE hInstance)
