@@ -558,10 +558,10 @@ void drawbar(void)
         swprintf(audiovstr, sizeof(audiovstr), L" %s %u%% ", volumeEmoji[i], vol);
     }
 
-    if (true)
+    if (showCpuUsage)
     {
-
-        swprintf(cpustr, sizeof(cpustr), L" 🖥 %i%% ", (int)GetCPULoad() * 100);
+        int b = (int)(GetCPULoad() * 100);
+        swprintf(cpustr, sizeof(cpustr), L" 🖥%s%i%% ", (b < 10 ? L"   " : (b < 100 ? L"  " : " ")), b);
     }
 
     //concatenate all the parts to create the final output string

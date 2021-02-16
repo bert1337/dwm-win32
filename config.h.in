@@ -29,6 +29,7 @@ static bool showexploreronstart = false;   /* false means do not show explorer/t
 static bool showBattery = true;            /* false means the battery level is not shown*/
 static bool showVolume = true;             /* false means the volume level is not shown*/
 static bool useCurrentSong = true;         /*false means that we wont use the current song plugin */
+static bool showCpuUsage = true;           /*false means the cpu usage is not shown */
 
 /* tagging */
 static const wchar_t tags[][MAXTAGLEN] = {
