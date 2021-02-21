@@ -262,13 +262,16 @@ float GetCPULoad();
 void updateVolume();
 void readStringFromFile(char *filename, wchar_t *out);
 int tcpServer();
+void borderWindowFun(HINSTANCE hInstance);
+LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void updatePosBorder();
 
 unsigned int vol = 0;
 
 typedef BOOL (*RegisterShellHookWindowProc)(HWND);
 
 typedef struct IMMDeviceEnumerator IMMDeviceEnumerator;
-static HWND dwmhwnd, barhwnd;
+static HWND dwmhwnd, barhwnd, borderhwnd;
 static HWINEVENTHOOK wineventhook;
 static HFONT font;
 static wchar_t stext[256];
@@ -2035,6 +2038,89 @@ void ReleaseHook()
     UnhookWindowsHookEx(_hook);
 }
 
+void updatePosBorder()
+{
+    RECT rect;
+    GetWindowRect(GetForegroundWindow(), &rect);
+    SetWindowPos(borderhwnd, -1, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_SHOWWINDOW);
+}
+
+LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg)
+    {
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        HPEN hPen = CreatePen(PS_SOLID, 20, GetSysColor(COLOR_HIGHLIGHT));
+        HBRUSH hBrush = CreateSolidBrush(selbordercolor);
+        HGDIOBJ hOldPen = SelectObject(hdc, hPen);
+        HGDIOBJ hOldBrush = SelectObject(hdc, hBrush);
+
+        Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
+
+        if (hOldPen)
+            SelectObject(hdc, hOldPen);
+        if (hOldBrush)
+            SelectObject(hdc, hOldBrush);
+        if (hPen)
+            DeleteObject(hPen);
+        if (hBrush)
+            DeleteObject(hBrush);
+
+        EndPaint(hwnd, &ps);
+    }
+    break;
+
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+
+    case WM_NCHITTEST:
+        return HTCAPTION; // to be able to drag the window around
+        break;
+    case WM_TIMER:
+        updatePosBorder();
+    default:
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+
+    return 0;
+}
+
+void borderWindowFun(HINSTANCE hInstance)
+{
+    WNDCLASSW wc;
+    wc.hInstance = hInstance;
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.lpszClassName = L"MyTransparentFrame";
+
+    wc.lpfnWndProc = borderPrc;
+    RegisterClass(&wc);
+
+    borderhwnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT, wc.lpszClassName, L"", WS_POPUP,
+                                0, 0, 0, 0, NULL, NULL, hInstance, NULL);
+
+    SetLayeredWindowAttributes(borderhwnd, selbordercolor, 255, LWA_COLORKEY);
+
+    ShowWindow(borderhwnd, SW_SHOW);
+
+    SetTimer(borderhwnd, 1, 1000, NULL);
+
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0))
+    {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
 int tcpServer()
 {
     while (true)
@@ -2201,6 +2287,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     lua_State *L = luaL_newstate();
     setup(L, hInstance);
     _beginthread(tcpServer, 0, 1);
+    _beginthread(borderWindowFun, 0, 2);
 
     while (GetMessage(&msg, NULL, 0, 0) > 0)
     {
