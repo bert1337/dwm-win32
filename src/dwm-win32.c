@@ -2044,8 +2044,13 @@ void updatePosBorder()
     RECT rect;
     if (sel)
     {
+        ShowWindow(borderhwnd, SW_HIDE);
         GetWindowRect(sel->hwnd, &rect);
         SetWindowPos(borderhwnd, -1, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_SHOWWINDOW);
+    }
+    else
+    {
+        ShowWindow(borderhwnd, SW_HIDE);
     }
 }
 
