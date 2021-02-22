@@ -1154,6 +1154,7 @@ void resize(Client *c, int x, int y, int w, int h)
 
 void restack(void)
 {
+    updatePosBorder();
 }
 
 LRESULT CALLBACK barhandler(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -1332,11 +1333,12 @@ scan(HWND hwnd, LPARAM lParam)
 
 void drawborder(Client *c, COLORREF color)
 {
-#if 1
+    updatePosBorder();
+#if 0
     HDC hdc = GetWindowDC(c->hwnd);
-#if 1
-    /* this would be another way, but it uses standard sytem colors */
-    RECT area = {.left = 0, .top = 0, .right = c->w, .bottom = c->h};
+#if 0
+        /* this would be another way, but it uses standard sytem colors */
+        RECT area = {.left = 0, .top = 0, .right = c->w, .bottom = c->h};
     DrawEdge(hdc, &area, BDR_RAISEDOUTER | BDR_SUNKENINNER, BF_RECT);
 #else
 
@@ -1348,10 +1350,9 @@ void drawborder(Client *c, COLORREF color)
     // LineTo(hdc, 0, c->h);
     // LineTo(hdc, 0, 0);
     // DeleteObject(pen);
-
 #endif
 
-    ReleaseDC(c->hwnd, hdc);
+    //ReleaseDC(c->hwnd, hdc);
 #endif
 }
 
@@ -2041,8 +2042,11 @@ void ReleaseHook()
 void updatePosBorder()
 {
     RECT rect;
-    GetWindowRect(GetForegroundWindow(), &rect);
-    SetWindowPos(borderhwnd, -1, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_SHOWWINDOW);
+    if (sel)
+    {
+        GetWindowRect(sel->hwnd, &rect);
+        SetWindowPos(borderhwnd, -1, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_SHOWWINDOW);
+    }
 }
 
 LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -2056,7 +2060,7 @@ LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
         RECT rc;
         GetClientRect(hwnd, &rc);
-        HPEN hPen = CreatePen(PS_SOLID, 20, GetSysColor(COLOR_HIGHLIGHT));
+        HPEN hPen = CreatePen(PS_SOLID, 5, 0x00a86267); //GetSysColor(COLOR_HIGHLIGHT));
         HBRUSH hBrush = CreateSolidBrush(selbordercolor);
         HGDIOBJ hOldPen = SelectObject(hdc, hPen);
         HGDIOBJ hOldBrush = SelectObject(hdc, hBrush);
