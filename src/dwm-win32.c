@@ -2092,8 +2092,6 @@ LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_NCHITTEST:
         return HTCAPTION; // to be able to drag the window around
         break;
-    case WM_TIMER:
-        updatePosBorder();
     default:
         return DefWindowProcW(hwnd, msg, wp, lp);
     }
@@ -2119,8 +2117,6 @@ void borderWindowFun(HINSTANCE hInstance)
     SetLayeredWindowAttributes(borderhwnd, selbordercolor, 255, LWA_COLORKEY);
 
     ShowWindow(borderhwnd, SW_SHOW);
-
-    SetTimer(borderhwnd, 1, 1000, NULL);
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0))
