@@ -27,9 +27,9 @@
 #include <lua.h>
 #include <lualib.h>
 #include <compat-5.3.h>
-#ifndef LUAJIT
-#include "../extern/luabitop/bit.c"
-#endif
+//#ifndef LUAJIT
+//#include "../extern/luabitop/bit.c"
+//#endif
 
 #include <windows.h>
 #include <dwmapi.h>
@@ -2092,6 +2092,9 @@ LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_NCHITTEST:
         return HTCAPTION; // to be able to drag the window around
         break;
+    case WM_TIMER:
+        updatePosBorder();
+        break;
     default:
         return DefWindowProcW(hwnd, msg, wp, lp);
     }
@@ -2101,7 +2104,7 @@ LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
 void borderWindowFun(HINSTANCE hInstance)
 {
-    WNDCLASSW wc;
+    WNDCLASSW wc = { 0 };
     wc.hInstance = hInstance;
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
@@ -2109,15 +2112,14 @@ void borderWindowFun(HINSTANCE hInstance)
     wc.lpszClassName = L"MyTransparentFrame";
 
     wc.lpfnWndProc = borderPrc;
+    LPCWSTR lpszClassName = wc.lpszClassName;
     RegisterClass(&wc);
-
-    borderhwnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT, wc.lpszClassName, L"", WS_POPUP,
+    borderhwnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT, lpszClassName, L"", WS_POPUP,
                                 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
-
     SetLayeredWindowAttributes(borderhwnd, selbordercolor, 255, LWA_COLORKEY);
 
     ShowWindow(borderhwnd, SW_SHOW);
-
+    SetTimer(borderhwnd, 1, clock_interval, NULL);
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0))
     {
