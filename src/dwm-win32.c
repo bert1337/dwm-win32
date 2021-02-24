@@ -292,6 +292,7 @@ static Layout *lt[] = {NULL, NULL};
 static UINT shellhookid; /* Window Message id */
 
 wchar_t playingstr[256];
+const COLORREF MY_COLOR_KEY = RGB(1, 1, 1);
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -2065,8 +2066,8 @@ LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
         RECT rc;
         GetClientRect(hwnd, &rc);
-        HPEN hPen = CreatePen(PS_SOLID, 5, 0x00a86267); //GetSysColor(COLOR_HIGHLIGHT));
-        HBRUSH hBrush = CreateSolidBrush(selbordercolor);
+        HPEN hPen = CreatePen(PS_SOLID, 5, selbordercolor);
+        HBRUSH hBrush = CreateSolidBrush(MY_COLOR_KEY);
         HGDIOBJ hOldPen = SelectObject(hdc, hPen);
         HGDIOBJ hOldBrush = SelectObject(hdc, hBrush);
 
@@ -2104,7 +2105,7 @@ LRESULT CALLBACK borderPrc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
 void borderWindowFun(HINSTANCE hInstance)
 {
-    WNDCLASSW wc = { 0 };
+    WNDCLASSW wc = {0};
     wc.hInstance = hInstance;
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
@@ -2116,7 +2117,7 @@ void borderWindowFun(HINSTANCE hInstance)
     RegisterClass(&wc);
     borderhwnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT, lpszClassName, L"", WS_POPUP,
                                 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
-    SetLayeredWindowAttributes(borderhwnd, selbordercolor, 255, LWA_COLORKEY);
+    SetLayeredWindowAttributes(borderhwnd, MY_COLOR_KEY, 255, LWA_COLORKEY);
 
     ShowWindow(borderhwnd, SW_SHOW);
     SetTimer(borderhwnd, 1, clock_interval, NULL);
