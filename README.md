@@ -40,12 +40,14 @@ Usage
 
  ## Keyboard
 
-  dwm uses a modifier key by default this is `ALT`.
+  dwm uses a modifier key by default this is `WINDOWS KEY`.
 
 
   `MOD + Control + b`  Toggles bar on and off.
 
-  `MOD + e` Toogles windows explorer and taskbar on and off.
+  `MOD + Shift + e` Toogles windows explorer and taskbar on and off.
+  
+  `MOD + e` Open explorer.
 
   `MOD + t` Sets tiled layout.
 
@@ -55,17 +57,19 @@ Usage
 
   `MOD + Control + space` Toggles between current and previous layout.
 
-  `MOD + j` Focus next window.
+  `MOD + arrow up` Focus next window.
 
-  `MOD + k` Focus previous window.
+  `MOD + arrow down` Focus previous window.
 
-  `MOD + h` Decrease master area size.
+  `MOD + arrow right` Decrease master area size.
 
-  `MOD + l` Increase master area size.
+  `MOD + arrow left` Increase master area size.
 
   `MOD + Control + Return` Zooms/cycles focused window to/from master area (tiled layouts only).
 
-  `MOD + Shift + c` Close focused window.
+  `MOD + c` Close focused window.
+
+  `MOD + Shift + c` Open chrome window.
 
   `MOD + Shift + Space` Toggle focused window between tiled and floating state.
 
@@ -82,9 +86,9 @@ Usage
 
   `MOD + Control + Shift + [1..n]` Add/remove nth tag to/from focused window.
 
-  `MOD + Shift + j` Move stack +1
+  `MOD + Shift + arrow up` Move stack +1
 
-  `MOD + Shift + k` Move stack -1
+  `MOD + Shift + arrow down` Move stack -1
 
   `MOD + [1..n]`  View all windows with nth tag.
 
