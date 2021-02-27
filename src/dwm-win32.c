@@ -268,6 +268,11 @@ void updatePosBorder();
 
 unsigned int vol = 0;
 
+
+size_t iterator = 0;
+wchar_t lastSong[256] = L"";
+wchar_t playingstr[256] = L"";
+
 typedef BOOL (*RegisterShellHookWindowProc)(HWND);
 
 typedef struct IMMDeviceEnumerator IMMDeviceEnumerator;
@@ -280,10 +285,10 @@ static int by, bh, blw;    /* bar geometry y, height and layout symbol width */
 static int wx, wy, ww, wh; /* window area geometry x, y, width, height, bar excluded */
 static unsigned int seltags, sellt;
 
-wchar_t *volumeEmoji[6] = {{L"🔇"},
-                           {L"🔈"},
+wchar_t *volumeEmoji[6] = {{L"🔈"},
                            {L"🔉"},
-                           {L"🔊"}};
+                           {L"🔊"},
+                           {L"🔇"}};
 
 static Client *clients = NULL;
 static Client *sel = NULL;
@@ -291,7 +296,6 @@ static Client *stack = NULL;
 static Layout *lt[] = {NULL, NULL};
 static UINT shellhookid; /* Window Message id */
 
-wchar_t playingstr[256];
 const COLORREF MY_COLOR_KEY = RGB(1, 1, 1);
 
 /* configuration, allows nested code to access above variables */
@@ -458,6 +462,7 @@ void detachstack(Client *c)
     *tc = c->snext;
 }
 
+
 void drawbar(void)
 {
     dc.hdc = GetWindowDC(barhwnd);
@@ -476,7 +481,8 @@ void drawbar(void)
     wchar_t batterystr[256];
     wchar_t audiovstr[256];
     wchar_t cpustr[256];
-
+    wchar_t currentSong[256];
+    
     wchar_t out[256];
 
     for (c = clients; c; c = c->next)
@@ -525,11 +531,11 @@ void drawbar(void)
             gmtime_s(&date, &timer);
             wcsftime(utctimestr, 255, clockfmt, &date);
 
-            swprintf(timestr, sizeof(timestr), L" 📅 %s | UTC: %s ", localtimestr, utctimestr);
+            swprintf(timestr, sizeof(timestr), L"[📅 %s | UTC: %s]", localtimestr, utctimestr);
         }
         else
         {
-            swprintf(timestr, sizeof(timestr), L" 📅 %s ", localtimestr);
+            swprintf(timestr, sizeof(timestr), L"[📅 %s]", localtimestr);
         }
     }
 
@@ -545,11 +551,11 @@ void drawbar(void)
             {
                 if (status.ACLineStatus == 1)
                 {
-                    swprintf(batterystr, sizeof(batterystr), L" ⚡🔋 %u%% ", battery);
+                    swprintf(batterystr, sizeof(batterystr), L"[⚡🔋 %u%%]", battery);
                 }
                 else
                 {
-                    swprintf(batterystr, sizeof(batterystr), L" 🔋 %u%% ", battery);
+                    swprintf(batterystr, sizeof(batterystr), L"[ 🔋 %u%%]", battery);
                 }
             }
         }
@@ -558,18 +564,43 @@ void drawbar(void)
     if (showVolume)
     {
         updateVolume();
-        unsigned int i = vol / 33;
-        swprintf(audiovstr, sizeof(audiovstr), L" %s %u%% ", volumeEmoji[i], vol);
+        unsigned int i = vol != 0 ? MIN(vol / 33, 2)  : 3;
+        wchar_t *spaces = (vol >= 10 ? (vol >= 100 ? L"": L" ") : L"  ");
+        swprintf(audiovstr, sizeof(audiovstr), L"[%s%s%u%%]", volumeEmoji[i],spaces, vol);
     }
 
     if (showCpuUsage)
     {
         int b = (int)(GetCPULoad() * 100);
-        swprintf(cpustr, sizeof(cpustr), L" 🖥 %i%% ", b);
+        wchar_t *spaces = (b >= 10 ? (b >= 100 ? L"": L" ") : L"  ");
+        swprintf(cpustr, sizeof(cpustr), L"[🖥%s%i%%]", spaces, b);
+    }
+
+    if(useCurrentSong)
+    {
+        if(wcscmp(lastSong, playingstr) != 0 ){
+            iterator = 0;
+            wcscpy(lastSong, playingstr);
+        }
+        if(wcslen(playingstr) > maxSongLenght){
+            wchar_t twice[512] = { 0 };
+            swprintf(twice, sizeof(twice),L"%s %s", lastSong, lastSong );
+            swprintf(currentSong, sizeof(currentSong), L"[%.*s]" , maxSongLenght, twice+iterator );
+            iterator++;
+            if( iterator == wcslen(playingstr) )
+            {
+                iterator = 0;
+            }
+        }else{
+            if(wcscmp(lastSong, L" ") == 0)
+                swprintf(currentSong, sizeof(currentSong), L"");
+            else
+                swprintf(currentSong, sizeof(currentSong), L"[%s]" , lastSong);
+        }
     }
 
     //concatenate all the parts to create the final output string
-    wcscpy(out, playingstr);
+    wcscpy(out, currentSong);
     wcscat(out, batterystr);
     wcscat(out, cpustr);
     wcscat(out, audiovstr);
@@ -594,21 +625,6 @@ void drawbar(void)
     ReleaseDC(barhwnd, dc.hdc);
 }
 
-void readStringFromFile(char *filename, wchar_t *out)
-{
-    FILE *fp;
-    char str[40];
-
-    fp = fopen(filename, "r");
-    if (fp != NULL)
-        if (fgets(str, sizeof(str), fp) != NULL)
-            swprintf(out, 256, L"%s", utf8_to_utf16(str));
-        //        *out = utf8_to_utf16(str);
-        else
-        {
-            swprintf(out, 256, L" ");
-        }
-}
 
 void updateVolume()
 {
@@ -744,9 +760,13 @@ cleanup:
 
 void setselected(Client *c)
 {
-    if (!c || !ISVISIBLE(c))
+    bool drawbarbool = true;
+    if (!c || !ISVISIBLE(c)){
+        drawbarbool = false;
         for (c = stack; c && !ISVISIBLE(c); c = c->snext)
             ;
+    }
+
     if (sel && sel != c)
         drawborder(sel, normbordercolor);
     if (c)
@@ -756,9 +776,11 @@ void setselected(Client *c)
         detachstack(c);
         attachstack(c);
         drawborder(c, selbordercolor);
+        if(drawbarbool){
+            drawbar();
+        }
     }
     sel = c;
-    drawbar();
 }
 
 void focus(Client *c)
@@ -766,9 +788,9 @@ void focus(Client *c)
     setselected(c);
     if (sel)
     {
-        //Artificially presses VK_F13 key, won't change focus if we dont do that
-        keybd_event(VK_F13, 0, 0, 0);
-        keybd_event(VK_F13, 0, 0x0002, 0);
+        //Artificially presses undefined key, won't change focus if we dont do that
+        keybd_event(0x07, 0, 0, 0);
+        keybd_event(0x07, 0, 0x0002, 0);
         SetForegroundWindow(sel->hwnd);
     }
 }
