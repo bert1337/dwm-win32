@@ -430,7 +430,7 @@ void cleanup(lua_State *L)
     if (font)
         DeleteObject(font);
     if (useCurrentSong)
-        system("powershell.exe Stop-Service -Name \"CurrentSongService\"");
+        system("powershell.exe -windowstyle hidden  Stop-Service -Name \"CurrentSongService\"");
 
     if (L)
     {
@@ -1489,8 +1489,8 @@ void setup(lua_State *L, HINSTANCE hInstance)
 
     if (useCurrentSong)
     {
-        system("powershell.exe New-Service -Name \"CurrentSongService\" -BinaryPathName \'\"C:\\dwm\\plugins\\CurrentSong\\CurrentSongService.exe \"\'");
-        system("powershell.exe Start-Service -Name \"CurrentSongService\"");
+        system("powershell.exe -windowstyle hidden  New-Service -Name \"CurrentSongService\" -BinaryPathName \'\"C:\\dwm\\plugins\\CurrentSong\\CurrentSongService.exe \"\'");
+        system("powershell.exe -windowstyle hidden Start-Service -Name \"CurrentSongService\"");
     }
 
     unsigned int i;
